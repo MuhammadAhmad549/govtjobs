@@ -3,7 +3,23 @@ import { scrapeFIAJobs } from '@/app/lib/scrapers/fia-scraper'
 import { scrapeFPSCJobs } from '@/app/lib/scrapers/fpsc-scraper'
 import { scrapeNJPJobs } from '@/app/lib/scrapers/njp-scraper'
 import { jobCache } from '@/app/lib/cache'
+import { isNonEmptyJobList, parseJobsSourceParam, type ScraperKey } from '@/app/lib/jobs-source'
 import { Job } from '@/app/lib/types'
+
+export const maxDuration = 45
+
+const sourceMap = {
+  fia: scrapeFIAJobs,
+  fpsc: scrapeFPSCJobs,
+  njp: scrapeNJPJobs
+} as const
+
+const cacheKeyMap = {
+  all: 'jobs_all',
+  fia: 'jobs_fia',
+  fpsc: 'jobs_fpsc',
+  njp: 'jobs_njp'
+} as const
 
 function isAuthorized(request: NextRequest): boolean {
   const adminSession = request.cookies.get('admin_session')?.value
@@ -51,97 +67,174 @@ function buildSourceCounts(jobs: Job[]) {
   }
 }
 
+function stitchPerSourceCaches(): Job[] {
+  const sourceKeys = Object.keys(sourceMap) as ScraperKey[]
+  return sourceKeys.flatMap((sourceKey) => jobCache.get<Job[]>(cacheKeyMap[sourceKey]) ?? [])
+}
+
+function resolveCountBase(jobsForList: Job[]): Job[] {
+  const allCached = jobCache.get<Job[]>(cacheKeyMap.all)
+  if (isNonEmptyJobList(allCached)) {
+    return allCached
+  }
+  const stitched = stitchPerSourceCaches()
+  if (isNonEmptyJobList(stitched)) {
+    return stitched
+  }
+  return jobsForList
+}
+
+function paginateJobs(jobs: Job[], page: number, limit: number) {
+  const total = jobs.length
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+  const safePage = Math.min(page, totalPages)
+  const startIndex = (safePage - 1) * limit
+  const paginated = jobs.slice(startIndex, startIndex + limit)
+
+  return {
+    paginated,
+    pagination: {
+      page: safePage,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: safePage < totalPages,
+      hasPreviousPage: safePage > 1
+    }
+  }
+}
+
+function buildResponse(
+  jobs: Job[],
+  source: string,
+  query: string,
+  page: number,
+  limit: number,
+  cacheStatus?: unknown,
+  countSourceJobs?: Job[]
+) {
+  const searchedJobs = applySearch(jobs, query)
+  const { paginated, pagination } = paginateJobs(searchedJobs, page, limit)
+  const summaryBase = applySearch(countSourceJobs ?? jobs, query)
+
+  return NextResponse.json({
+    success: true,
+    data: paginated,
+    source,
+    timestamp: new Date().toISOString(),
+    cacheInfo: cacheStatus,
+    pagination,
+    summary: {
+      sourceCounts: buildSourceCounts(summaryBase)
+    }
+  })
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const source = searchParams.get('source')
+    const { scrapeKeys, filterBy } = parseJobsSourceParam(searchParams.get('source'))
     const refresh = searchParams.get('refresh') === 'true'
     const { page, limit, query } = getPaginationParams(request)
 
-    const cacheKey = `jobs_${source || 'all'}`
     if (!refresh) {
-      const cachedData = jobCache.get<Job[]>(cacheKey)
-      if (cachedData) {
-        const searchedJobs = applySearch(cachedData, query)
-        const total = searchedJobs.length
-        const totalPages = Math.max(1, Math.ceil(total / limit))
-        const safePage = Math.min(page, totalPages)
-        const startIndex = (safePage - 1) * limit
-        const paginated = searchedJobs.slice(startIndex, startIndex + limit)
+      const tryServeFromCache = (): { jobs: Job[]; countBase: Job[] } | null => {
+        const allCached = jobCache.get<Job[]>(cacheKeyMap.all)
+        const stitched = stitchPerSourceCaches()
 
-        return NextResponse.json({
-          success: true,
-          data: paginated,
-          source: 'cache',
-          timestamp: new Date().toISOString(),
-          pagination: {
-            page: safePage,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: safePage < totalPages,
-            hasPreviousPage: safePage > 1
-          },
-          summary: {
-            sourceCounts: buildSourceCounts(searchedJobs)
+        if (filterBy) {
+          const pool = isNonEmptyJobList(allCached) ? allCached : stitched
+          if (!isNonEmptyJobList(pool)) {
+            return null
           }
-        })
+          const filtered = pool.filter((job) => job.source === filterBy)
+          if (!isNonEmptyJobList(filtered)) {
+            return null
+          }
+          return { jobs: filtered, countBase: resolveCountBase(filtered) }
+        }
+
+        if (scrapeKeys.length === 3) {
+          if (isNonEmptyJobList(allCached)) {
+            return { jobs: allCached, countBase: allCached }
+          }
+          if (isNonEmptyJobList(stitched)) {
+            return { jobs: stitched, countBase: stitched }
+          }
+          return null
+        }
+
+        const singleKey = scrapeKeys[0]
+        const direct = jobCache.get<Job[]>(cacheKeyMap[singleKey])
+        if (isNonEmptyJobList(direct)) {
+          return { jobs: direct, countBase: resolveCountBase(direct) }
+        }
+
+        if (isNonEmptyJobList(allCached)) {
+          const filtered = allCached.filter((job) => job.source.toLowerCase() === singleKey)
+          if (isNonEmptyJobList(filtered)) {
+            return { jobs: filtered, countBase: allCached }
+          }
+        }
+
+        const stitchedFiltered = stitched.filter((job) => job.source.toLowerCase() === singleKey)
+        if (isNonEmptyJobList(stitchedFiltered)) {
+          return { jobs: stitchedFiltered, countBase: isNonEmptyJobList(allCached) ? allCached : stitched }
+        }
+
+        return null
+      }
+
+      const cached = tryServeFromCache()
+      if (cached) {
+        return buildResponse(cached.jobs, 'cache', query, page, limit, jobCache.getStats(), cached.countBase)
       }
     }
 
-    let allJobs: Job[] = []
+    const results = await Promise.allSettled(scrapeKeys.map((sourceKey) => sourceMap[sourceKey]()))
 
-    try {
-      if (!source || source === 'all' || source === 'fia') {
-        const fiaJobs = await scrapeFIAJobs()
-        allJobs = [...allJobs, ...fiaJobs]
-      }
-
-      if (!source || source === 'all' || source === 'fpsc') {
-        const fpscJobs = await scrapeFPSCJobs()
-        allJobs = [...allJobs, ...fpscJobs]
-      }
-
-      if (!source || source === 'all' || source === 'njp') {
-        const njpJobs = await scrapeNJPJobs()
-        allJobs = [...allJobs, ...njpJobs]
-      }
-    } catch (error) {
-      console.error('Scraping error:', error)
-    }
-
-    let filteredJobs = allJobs
-    if (source && source !== 'all') {
-      filteredJobs = allJobs.filter((job) => job.source.toLowerCase() === source.toLowerCase())
-    }
-
-    jobCache.set<Job[]>(cacheKey, filteredJobs)
-    const searchedJobs = applySearch(filteredJobs, query)
-    const total = searchedJobs.length
-    const totalPages = Math.max(1, Math.ceil(total / limit))
-    const safePage = Math.min(page, totalPages)
-    const startIndex = (safePage - 1) * limit
-    const paginated = searchedJobs.slice(startIndex, startIndex + limit)
-
-    return NextResponse.json({
-      success: true,
-      data: paginated,
-      source: 'live',
-      count: total,
-      timestamp: new Date().toISOString(),
-      cacheInfo: jobCache.getStats(),
-      pagination: {
-        page: safePage,
-        limit,
-        total,
-        totalPages,
-        hasNextPage: safePage < totalPages,
-        hasPreviousPage: safePage > 1
-      },
-      summary: {
-        sourceCounts: buildSourceCounts(searchedJobs)
+    const merged: Job[] = []
+    results.forEach((result, index) => {
+      const sourceKey = scrapeKeys[index]
+      if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+        merged.push(...result.value)
+      } else {
+        console.error(`Scraping error for ${sourceKey.toUpperCase()}:`, result.status === 'rejected' ? result.reason : 'Unexpected scraper result')
       }
     })
+
+    if (!merged.length) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Unable to load job listings right now. Please try again in a few moments.',
+          data: []
+        },
+        { status: 503 }
+      )
+    }
+
+    let filteredJobs = merged
+    if (filterBy) {
+      filteredJobs = merged.filter((job) => job.source === filterBy)
+    } else if (scrapeKeys.length === 1) {
+      const only = scrapeKeys[0]
+      filteredJobs = merged.filter((job) => job.source.toLowerCase() === only)
+    }
+
+    if (scrapeKeys.length === 3) {
+      jobCache.set(cacheKeyMap.all, merged)
+      jobCache.set(cacheKeyMap.fia, merged.filter((job) => job.source === 'FIA'))
+      jobCache.set(cacheKeyMap.fpsc, merged.filter((job) => job.source === 'FPSC'))
+      jobCache.set(cacheKeyMap.njp, merged.filter((job) => job.source === 'NJP'))
+    } else {
+      const singleKey = scrapeKeys[0]
+      jobCache.set(cacheKeyMap[singleKey], merged)
+    }
+
+    const countBase = scrapeKeys.length === 3 ? merged : resolveCountBase(filteredJobs)
+
+    return buildResponse(filteredJobs, 'live', query, page, limit, jobCache.getStats(), countBase)
   } catch (error) {
     console.error('API Error:', error)
     return NextResponse.json(
@@ -165,16 +258,30 @@ export async function POST(request: NextRequest) {
 
     if (action === 'refresh') {
       jobCache.clear()
-      let allJobs: Job[] = []
+      const sources = ['fia', 'fpsc', 'njp'] as const
+      const results = await Promise.allSettled(sources.map((sourceKey) => sourceMap[sourceKey]()))
 
-      try {
-        const [fiaJobs, fpscJobs, njpJobs] = await Promise.all([scrapeFIAJobs(), scrapeFPSCJobs(), scrapeNJPJobs()])
-        allJobs = [...allJobs, ...fiaJobs, ...fpscJobs, ...njpJobs]
-      } catch (error) {
-        console.error('Error during refresh:', error)
+      const sourceJobs: Record<ScraperKey, Job[]> = {
+        fia: [],
+        fpsc: [],
+        njp: []
       }
+      const allJobs: Job[] = []
 
-      jobCache.set('jobs_all', allJobs)
+      results.forEach((result, index) => {
+        const sourceKey = sources[index]
+        if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+          sourceJobs[sourceKey] = result.value
+          allJobs.push(...result.value)
+        } else {
+          console.error(`Error refreshing ${sourceKey.toUpperCase()}:`, result.status === 'rejected' ? result.reason : 'Unexpected scraper result')
+        }
+      })
+
+      jobCache.set(cacheKeyMap.all, allJobs)
+      jobCache.set(cacheKeyMap.fia, sourceJobs.fia)
+      jobCache.set(cacheKeyMap.fpsc, sourceJobs.fpsc)
+      jobCache.set(cacheKeyMap.njp, sourceJobs.njp)
 
       return NextResponse.json({
         success: true,
@@ -200,11 +307,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 })
+    return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
   } catch (error) {
-    console.error('POST Error:', error)
+    console.error('API Error:', error)
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }

@@ -21,8 +21,6 @@ interface ParsedJob {
 export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
   try {
     const url = 'https://fia.gov.pk/careers'
-    
-    // Set timeout and headers to mimic browser request
     const { data } = await axios.get(url, {
       timeout: 15000,
       headers: {
@@ -33,7 +31,7 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
     const $ = cheerio.load(data)
     const jobs: ParsedJob[] = []
     const seenTitles = new Set<string>()
-    let jobId = 9001 // Start FIA jobs from ID 9001
+    let jobId = 9001
 
     const jobElements = $('.careers-list a, .career-item a, a[href*="career"], a[href*="vacancy"], a[href*="jobs"]')
 
@@ -45,23 +43,35 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
     jobElements.each((index, element) => {
       try {
         const $el = $(element)
-        
-        // Extract job details with multiple selector options
-        const title = ($el.text() || $el.find('h2, h3, .job-title, .position-title').text()).replace(/\s+/g, ' ').trim()
-        const normalizedTitle = title.toLowerCase()
-        
-        const description = $el.closest('article, li, div').text().replace(/\s+/g, ' ').trim().substring(0, 200)
-        
-        const deadline = $el.find('.deadline, .closing-date, .last-date').text().trim() ||
-                        $el.find('*:contains("deadline"), *:contains("Date"), *:contains("date")').first().text().trim()
-        
-        const applyUrl = $el.attr('href') || 'https://fia.gov.pk/careers'
+        const href = $el.attr('href') || ''
+        const normalizedHref = toAbsoluteUrl('https://fia.gov.pk', href)
 
-        if (!isLikelyJobTitle(normalizedTitle) || seenTitles.has(normalizedTitle)) {
+        const rawTitle = ($el.text() || $el.attr('title') || $el.attr('aria-label') || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+        const title = rawTitle || generateTitleFromHref(href)
+        const lookupTitle = title.toLowerCase()
+
+        if (!title || title.length < 6 || containsDenyWord(lookupTitle) || seenTitles.has(lookupTitle)) {
           return
         }
 
-        seenTitles.add(normalizedTitle)
+        const description = $el
+          .closest('article, li, div')
+          .text()
+          .replace(/\s+/g, ' ')
+          .trim()
+          .substring(0, 260)
+
+        const deadline = [$el.find('.deadline, .closing-date, .last-date').text().trim(),
+          $el.find('*:contains("deadline"), *:contains("last date"), *:contains("closing date")').first().text().trim()
+        ].find(Boolean) || 'Check website'
+
+        if (!isLikelyFIAJobTitle(lookupTitle)) {
+          return
+        }
+
+        seenTitles.add(lookupTitle)
 
         jobs.push({
           id: jobId++,
@@ -69,13 +79,13 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
           department: 'Federal Investigation Agency',
           location: extractLocation(description) || 'Pakistan',
           salary: extractSalary(description) || 'Competitive',
-          deadline: deadline || 'Check website',
+          deadline,
           type: description.toLowerCase().includes('contract') ? 'Contract' : 'Permanent',
           experience: extractExperience(description) || 'As per requirements',
-          description: description.substring(0, 200),
+          description: description || 'Official FIA listing.',
           source: 'FIA',
           sourceWebsite: 'Federal Investigation Agency',
-          applyUrl: toAbsoluteUrl('https://fia.gov.pk', applyUrl),
+          applyUrl: normalizedHref,
           sourceColor: 'purple',
           isAuthentic: true
         })
@@ -84,7 +94,7 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
       }
     })
 
-    if (jobs.length === 0) {
+    if (!jobs.length) {
       jobs.push({
         id: jobId++,
         title: 'FIA Careers Portal',
@@ -111,18 +121,30 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
   }
 }
 
-function isLikelyJobTitle(title: string): boolean {
+function isLikelyFIAJobTitle(title: string): boolean {
   if (title.length < 8 || title.length > 140) {
     return false
   }
 
-  const keywords = ['job', 'vacancy', 'position', 'post', 'career', 'apply', 'recruitment']
-  if (!keywords.some((keyword) => title.includes(keyword))) {
-    return false
-  }
+  const keywords = ['job', 'vacancy', 'position', 'post', 'career', 'apply', 'recruitment', 'advertisement']
+  return keywords.some((keyword) => title.includes(keyword))
+}
 
-  const denyList = ['home', 'about', 'contact', 'news', 'gallery', 'tender', 'click to read jobs details', 'read more', 'view details']
-  return !denyList.some((word) => title.includes(word))
+function containsDenyWord(title: string): boolean {
+  const denyList = ['home', 'about', 'contact', 'news', 'gallery', 'tender', 'read more', 'view details']
+  return denyList.some((word) => title.includes(word))
+}
+
+function generateTitleFromHref(href: string): string {
+  if (!href) return 'FIA Careers Listing'
+  return href
+    .replace(/\?.*$/, '')
+    .split('/')
+    .filter(Boolean)
+    .pop()
+    ?.replace(/[-_]/g, ' ')
+    .replace(/\b(job|vacancy|career|describe|details)\b/gi, '')
+    .trim() || 'FIA Careers Listing'
 }
 
 function toAbsoluteUrl(base: string, href: string): string {
@@ -141,15 +163,14 @@ function toAbsoluteUrl(base: string, href: string): string {
   return `${base}/${href}`
 }
 
-// Helper functions to extract information
 function extractLocation(text: string): string | null {
   const locations = ['Islamabad', 'Lahore', 'Karachi', 'Peshawar', 'Multan', 'Quetta', 'Faisalabad', 'Rawalpindi']
-  const match = locations.find(loc => text.includes(loc))
+  const match = locations.find((loc) => text.includes(loc))
   return match || null
 }
 
 function extractSalary(text: string): string | null {
-  const salaryMatch = text.match(/Rs\.?\s*([\d,]+)\s*-\s*([\d,]+)|salary|Rs|PKR/i)
+  const salaryMatch = text.match(/Rs\.?\s*([\d,]+)\s*[-–]\s*([\d,]+)|salary|Rs|PKR/i)
   return salaryMatch ? 'As per BPS' : null
 }
 

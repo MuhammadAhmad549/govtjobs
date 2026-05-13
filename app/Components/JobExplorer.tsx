@@ -57,17 +57,21 @@ export default function JobExplorer() {
     const searchQuery = opts?.queryOverride ?? debouncedSearch
     setLoading(true)
     setError(null)
+
     try {
       const params = new URLSearchParams({
         page: String(targetPage),
         limit: '12'
       })
+
       if (selectedDept !== 'ALL') {
         params.set('source', selectedDept.toLowerCase())
       }
+
       if (searchQuery) {
         params.set('q', searchQuery)
       }
+
       if (opts?.forceRefresh) {
         params.set('refresh', 'true')
       }
@@ -75,21 +79,22 @@ export default function JobExplorer() {
       const response = await fetch(`/api/jobs?${params.toString()}`)
       const data = await response.json().catch(() => null)
 
-      if (!response.ok) {
+      if (!response.ok || !data?.success) {
         setError(data?.error || 'Unable to load jobs at the moment.')
         return
       }
 
-      if (data?.success && Array.isArray(data.data)) {
-        setJobs(data.data)
-        setLastUpdated(new Date(data.timestamp).toLocaleTimeString())
-        if (data.pagination) {
-          setPagination(data.pagination)
-          setPage(data.pagination.page)
-        }
-        if (data.summary?.sourceCounts) {
-          setCounts(data.summary.sourceCounts)
-        }
+      setJobs(Array.isArray(data.data) ? data.data : [])
+      const timestamp = data?.timestamp ? new Date(data.timestamp) : new Date()
+      setLastUpdated(timestamp.toLocaleTimeString())
+
+      if (data.pagination) {
+        setPagination(data.pagination)
+        setPage(data.pagination.page)
+      }
+
+      if (data.summary?.sourceCounts) {
+        setCounts(data.summary.sourceCounts)
       }
     } catch (error) {
       console.error('JobExplorer fetch error:', error)
@@ -100,42 +105,47 @@ export default function JobExplorer() {
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const debounceTimer = window.setTimeout(() => {
       setDebouncedSearch(searchTerm.trim())
     }, 300)
-    return () => window.clearTimeout(timer)
+
+    return () => window.clearTimeout(debounceTimer)
   }, [searchTerm])
 
   useEffect(() => {
-    const initialTimer = window.setTimeout(() => void fetchJobs(), 0)
+    const initialId = window.setTimeout(() => {
+      void fetchJobs({ pageOverride: 1 })
+    }, 0)
     const interval = window.setInterval(() => {
-      void fetchJobs()
-    }, 30 * 60 * 1000)
+      if (document.visibilityState === 'visible') {
+        void fetchJobs({ pageOverride: 1 })
+      }
+    }, 15 * 60 * 1000)
+
     return () => {
-      window.clearTimeout(initialTimer)
+      window.clearTimeout(initialId)
       window.clearInterval(interval)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const id = window.setTimeout(() => {
       setPage(1)
-      void fetchJobs({ pageOverride: 1 })
+      void fetchJobs({ pageOverride: 1, queryOverride: debouncedSearch })
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => window.clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDept, debouncedSearch])
 
-  const handleSearchSubmit = async () => {
+  const handleSearchSubmit = () => {
     const trimmed = searchTerm.trim()
     setDebouncedSearch(trimmed)
     setPage(1)
-    await fetchJobs({ pageOverride: 1, queryOverride: trimmed })
   }
 
   const handleRefresh = async () => {
-    await fetchJobs({ forceRefresh: true })
+    await fetchJobs({ forceRefresh: true, pageOverride: 1 })
   }
 
   const handlePreviousPage = async () => {

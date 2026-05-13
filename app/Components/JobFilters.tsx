@@ -46,7 +46,7 @@ export default function JobFilters({
       </div>
 
       {lastUpdated ? (
-        <p className="text-sm text-slate-500 mb-6">Last updated: {lastUpdated} • Auto-refresh every 30 minutes</p>
+        <p className="text-sm text-slate-500 mb-6">Last updated: {lastUpdated} • Auto-refresh every 15 minutes while this tab is visible</p>
       ) : null}
 
       <form
@@ -54,9 +54,9 @@ export default function JobFilters({
           e.preventDefault()
           onSearchSubmit()
         }}
-        className="grid gap-4 lg:grid-cols-[1.8fr_0.8fr] mb-6"
+        className="mb-6"
       >
-        <div className="relative">
+        <div className="relative max-w-3xl">
           <input
             type="search"
             aria-label="Search jobs"
@@ -74,34 +74,20 @@ export default function JobFilters({
             Search
           </button>
         </div>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setSelectedDept('ALL')}
-            className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-              selectedDept === 'ALL'
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            All Jobs ({counts.ALL})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedDept('FIA')}
-            className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-              selectedDept === 'FIA'
-                ? 'bg-purple-700 text-white'
-                : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-            }`}
-          >
-            FIA ({counts.FIA})
-          </button>
-        </div>
       </form>
 
       <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => setSelectedDept('ALL')}
+          className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+            selectedDept === 'ALL'
+              ? 'bg-slate-900 text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          All Jobs ({counts.ALL})
+        </button>
         {Object.entries(departments).map(([key, dept]) => (
           <button
             key={key}

@@ -25,6 +25,27 @@ export default function PrivacyPage() {
             <p className="text-slate-600">We may use third-party services such as analytics or ad providers. These services have their own privacy policies and data handling procedures.</p>
           </div>
           <div>
+            <h2 className="text-2xl font-semibold mb-2">Advertising (Google AdSense)</h2>
+            <p className="text-slate-600">
+              This site may display ads through Google AdSense. Google may use cookies or similar technologies to show personalized or non-personalized ads based on your visits to this and other
+              websites. See{' '}
+              <a href="https://policies.google.com/technologies/ads" className="text-blue-600 hover:underline" rel="noopener noreferrer" target="_blank">
+                how Google uses information from sites that use its services
+              </a>
+              , and manage ad personalization in{' '}
+              <a href="https://adssettings.google.com" className="text-blue-600 hover:underline" rel="noopener noreferrer" target="_blank">
+                Google Ads Settings
+              </a>
+              . We do not sell your personal information.
+            </p>
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold mb-2">Cookies</h2>
+            <p className="text-slate-600">
+              We use strictly necessary cookies where required for site operation (for example admin sessions). Optional cookies may be set by analytics or advertising partners as described above.
+            </p>
+          </div>
+          <div>
             <h2 className="text-2xl font-semibold mb-2">Contact</h2>
             <p className="text-slate-600">If you have questions about this Privacy Policy, please visit our <a href="/contact" className="text-blue-600 hover:underline">Contact page</a>.</p>
           </div>

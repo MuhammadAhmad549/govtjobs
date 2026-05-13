@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -11,10 +11,14 @@ export default function WelcomeModal() {
   const [mounted, setMounted] = useState(false)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
 
-  const handleClose = () => {
-    localStorage.setItem(STORAGE_KEY, 'true')
+  const handleClose = useCallback(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, 'true')
+    } catch {
+      // private mode / blocked storage
+    }
     setIsOpen(false)
-  }
+  }, [])
 
   useEffect(() => {
     setMounted(true)
@@ -22,16 +26,24 @@ export default function WelcomeModal() {
 
   useEffect(() => {
     if (!mounted) return
-    const seen = localStorage.getItem(STORAGE_KEY)
-    if (!seen) setIsOpen(true)
 
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') handleClose()
     }
 
     window.addEventListener('keydown', handleEsc)
+
+    try {
+      const dismissed = localStorage.getItem(STORAGE_KEY)
+      if (dismissed !== 'true') {
+        queueMicrotask(() => setIsOpen(true))
+      }
+    } catch {
+      queueMicrotask(() => setIsOpen(true))
+    }
+
     return () => window.removeEventListener('keydown', handleEsc)
-  }, [mounted])
+  }, [mounted, handleClose])
 
   useEffect(() => {
     if (isOpen && mounted) {
@@ -42,107 +54,201 @@ export default function WelcomeModal() {
   if (!mounted) return null
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm px-4 py-6"
-          onClick={handleClose}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-        >
+    <AnimatePresence mode="wait">
+  {isOpen && (
+    <motion.div
+      key="welcome-backdrop"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md px-4 py-6"
+      onClick={handleClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
+    >
+      {/* Floating Glow Effects */}
+      <div className="absolute top-[-120px] left-[-120px] h-80 w-80 rounded-full bg-blue-500/20 blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-[-120px] right-[-120px] h-80 w-80 rounded-full bg-cyan-400/20 blur-3xl animate-pulse"></div>
+
+      <motion.div
+        key="welcome-panel"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-2xl overflow-hidden rounded-[32px] bg-white shadow-[0_25px_80px_rgba(0,0,0,0.35)] ring-1 ring-white/20"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="welcome-title"
+        initial={{ opacity: 0, scale: 0.88, y: 60, rotateX: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0, rotateX: 0 }}
+        exit={{ opacity: 0, scale: 0.92, y: 30 }}
+        transition={{
+          type: 'spring',
+          stiffness: 120,
+          damping: 18,
+          mass: 0.8,
+        }}
+      >
+        {/* Gradient Top Glow */}
+        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-r from-blue-600/20 via-cyan-500/20 to-indigo-600/20 blur-2xl"></div>
+
+        {/* Main Content */}
+        <div className="relative p-6 sm:p-8">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-6">
+            <div className="flex items-center gap-5">
+              
+              {/* Enhanced Logo */}
+              <motion.div
+  initial={{ scale: 0.8, rotate: -8 }}
+  animate={{ scale: 1, rotate: 0 }}
+  transition={{
+    type: 'spring',
+    stiffness: 180,
+    damping: 30,
+  }}
+  className="relative flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-600 via-cyan-500 to-indigo-600 p-1 shadow-[0_10px_40px_rgba(37,99,235,0.45)]"
+>
+  <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[22px] bg-white">
+    
+    <Image
+      src="/logo1.png"
+      alt="GovtJobs Logo"
+      width={100}
+      height={90}
+      priority
+      className="object-contain"
+    />
+  </div>
+
+  {/* Border Glow */}
+  <div className="absolute inset-0 rounded-3xl border border-white/20"></div>
+</motion.div>
+
+              {/* Text */}
+              <div>
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="text-xs font-bold uppercase tracking-[0.3em] text-blue-600"
+                >
+                  Welcome to GovtJobs
+                </motion.p>
+
+                <motion.h2
+                  id="welcome-title"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl"
+                >
+                  Ready for What’s Next?
+                </motion.h2>
+
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="mt-2 text-sm text-slate-500"
+                >
+                  Your future opportunities start here.
+                </motion.p>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <motion.button
+              ref={closeBtnRef}
+              onClick={handleClose}
+              whileHover={{ scale: 1.08, rotate: 90 }}
+              whileTap={{ scale: 0.92 }}
+              className="inline-flex  cursor-pointer h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-900"
+              aria-label="Close popup"
+            >
+              ✕
+            </motion.button>
+          </div>
+
+          {/* Body */}
           <motion.div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-4xl bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="welcome-title"
-            initial={{ opacity: 0, scale: 0.9, y: 40 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            transition={{
-              type: 'spring',
-              stiffness: 260,
-              damping: 20
+            className="mt-8 space-y-6"
+            initial="hidden"
+            animate="visible"
+            variants={{
+              hidden: {},
+              visible: {
+                transition: {
+                  staggerChildren: 0.08,
+                },
+              },
             }}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-200">
-              <div className="flex items-center gap-3">
-                <div className="relative h-12 w-12 overflow-hidden rounded-2xl bg-slate-900">
-                  <Image
-                    src="/logo1.png"
-                    alt="Logo"
-                    fill
-                    className="object-contain"
-                    priority
-                  />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
-                    Welcome to GovtJobs
-                  </p>
-                  <p
-                    id="welcome-title"
-                    className="text-lg font-bold text-slate-900"
-                  >
-                    Ready for What’s Next?
-                  </p>
-                </div>
-              </div>
+            <motion.p
+              variants={{
+                hidden: { opacity: 0, y: 15 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="text-lg leading-8 text-slate-700"
+            >
+              Take the next step in your career or find the right talent — faster, smarter, and more confidently.
+            </motion.p>
 
-              <button
-                ref={closeBtnRef}
-                onClick={handleClose}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
-                aria-label="Close popup"
-              >
-                ✕
-              </button>
-            </div>
+            <div className="grid gap-4  cursor-pointer sm:grid-cols-2">
+              {[
+                'Discover jobs tailored to your skills',
+                'Apply quickly with a streamlined process',
+                'Explore verified opportunities',
+                'Connect with active employers',
+                'Build your perfect team confidently',
+                'Stay updated with latest openings',
+              ].map((item, index) => (
+                <motion.div
+                  key={index}
+                  variants={{
+                    hidden: { opacity: 0, y: 20 },
+                    visible: { opacity: 1, y: 0 },
+                  }}
+                  whileHover={{
+                    y: -3,
+                    scale: 1.02,
+                  }}
+                  className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <div className="mt-1 h-2.5 w-2.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 shadow-md"></div>
 
-            {/* Content */}
-            <div className="mt-6 space-y-5 text-slate-700">
-              <p className="text-lg leading-8">
-                Take the next step in your career or find the right talent—faster and smarter.
-              </p>
-
-              <ul className="space-y-3 text-sm leading-7 text-slate-600">
-                <li className="flex gap-3">
-                  <span>🎯</span>
-                  <span>Discover jobs tailored to your skills and experience</span>
-                </li>
-                <li className="flex gap-3">
-                  <span>🚀</span>
-                  <span>Apply quickly with a simple, streamlined process</span>
-                </li>
-                <li className="flex gap-3">
-                  <span>🔍</span>
-                  <span>Explore verified and up-to-date opportunities</span>
-                </li>
-                <li className="flex gap-3">
-                  <span>🤝</span>
-                  <span>Connect with employers actively hiring</span>
-                </li>
-                <li className="flex gap-3">
-                  <span>📈</span>
-                  <span>Grow your career or build your perfect team with confidence</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-8 text-right">
-              <button
-                onClick={handleClose}
-                className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
-              >
-                Let’s get started
-              </button>
+                  <span className="text-sm font-medium leading-6 text-slate-700 group-hover:text-slate-900">
+                    {item}
+                  </span>
+                </motion.div>
+              ))}
             </div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+
+          {/* Footer */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="mt-10 flex items-center justify-between gap-4"
+          >
+            <p className="hidden text-sm text-slate-500 sm:block">
+              Trusted platform for career growth 🚀
+            </p>
+
+            <motion.button
+              onClick={handleClose}
+              whileHover={{
+                scale: 1.03,
+                boxShadow: '0px 12px 30px rgba(15,23,42,0.25)',
+              }}
+              whileTap={{ scale: 0.97 }}
+              className="inline-flex items-center justify-center cursor-pointer rounded-2xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Let’s Get Started
+            </motion.button>
+          </motion.div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
   )
 }

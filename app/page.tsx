@@ -3,6 +3,7 @@ import Navbar from './Components/Navbar'
 import Footer from './Components/Footer'
 import JobExplorer from './Components/JobExplorer'
 import WelcomeModal from './Components/WelcomeModal'
+import AdUnit from './Components/AdUnit'
 
 export default function Home() {
   return (
@@ -34,6 +35,13 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME ? (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <p className="mb-2 text-center text-xs font-medium uppercase tracking-wide text-slate-400">Advertisement</p>
+          <AdUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME} />
+        </div>
+      ) : null}
 
       <div id="jobs">
         <JobExplorer />

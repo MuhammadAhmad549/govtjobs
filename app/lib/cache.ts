@@ -10,12 +10,19 @@ class JobCache {
   private cache: Map<string, CacheEntry> = new Map()
   private ttl: number = 6 * 60 * 60 * 1000 // 6 hours in milliseconds
   private cacheFile = path.join(process.cwd(), '.next', 'job-cache.json')
+  private readonly persistEnabled: boolean
 
   constructor() {
-    this.loadFromDisk()
+    this.persistEnabled = process.env.VERCEL !== '1' && process.env.DISABLE_JOB_CACHE_DISK !== '1'
+    if (this.persistEnabled) {
+      this.loadFromDisk()
+    }
   }
 
   private loadFromDisk(): void {
+    if (!this.persistEnabled) {
+      return
+    }
     try {
       if (!fs.existsSync(this.cacheFile)) {
         return
@@ -36,6 +43,9 @@ class JobCache {
   }
 
   private persistToDisk(): void {
+    if (!this.persistEnabled) {
+      return
+    }
     try {
       const dir = path.dirname(this.cacheFile)
       if (!fs.existsSync(dir)) {
