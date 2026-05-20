@@ -1,6 +1,9 @@
 import { scrapeFIAJobs } from '@/app/lib/scrapers/fia-scraper'
 import { scrapeFPSCJobs } from '@/app/lib/scrapers/fpsc-scraper'
 import { scrapeNJPJobs } from '@/app/lib/scrapers/njp-scraper'
+import { scrapePPSCJobs } from '@/app/lib/scrapers/ppsc-scraper'
+import { scrapePunjabJobs } from '@/app/lib/scrapers/punjab-scraper'
+import { scrapeFBRJobs } from '@/app/lib/scrapers/fbr-scraper'
 import { jobCache } from '@/app/lib/cache'
 import { slugifyJob } from '@/app/lib/job-slug'
 import type { Job } from '@/app/lib/types'
@@ -16,7 +19,10 @@ export async function getAllJobsForSeo(): Promise<Job[]> {
   const results = await Promise.allSettled([
     scrapeFIAJobs(),
     scrapeFPSCJobs(),
-    scrapeNJPJobs()
+    scrapeNJPJobs(),
+    scrapePPSCJobs(),
+    scrapePunjabJobs(),
+    scrapeFBRJobs()
   ])
 
   const jobs: Job[] = []

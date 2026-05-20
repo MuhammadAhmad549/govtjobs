@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { scrapeFIAJobs } from '@/app/lib/scrapers/fia-scraper'
 import { scrapeFPSCJobs } from '@/app/lib/scrapers/fpsc-scraper'
 import { scrapeNJPJobs } from '@/app/lib/scrapers/njp-scraper'
+import { scrapePPSCJobs } from '@/app/lib/scrapers/ppsc-scraper'
+import { scrapePunjabJobs } from '@/app/lib/scrapers/punjab-scraper'
+import { scrapeFBRJobs } from '@/app/lib/scrapers/fbr-scraper'
 import { jobCache } from '@/app/lib/cache'
 import { isNonEmptyJobList, parseJobsSourceParam, type ScraperKey } from '@/app/lib/jobs-source'
 import { Job } from '@/app/lib/types'
@@ -11,15 +14,23 @@ export const maxDuration = 45
 const sourceMap = {
   fia: scrapeFIAJobs,
   fpsc: scrapeFPSCJobs,
-  njp: scrapeNJPJobs
+  njp: scrapeNJPJobs,
+  ppsc: scrapePPSCJobs,
+  punjab: scrapePunjabJobs,
+  fbr: scrapeFBRJobs
 } as const
 
 const cacheKeyMap = {
   all: 'jobs_all',
   fia: 'jobs_fia',
   fpsc: 'jobs_fpsc',
-  njp: 'jobs_njp'
+  njp: 'jobs_njp',
+  ppsc: 'jobs_ppsc',
+  punjab: 'jobs_punjab',
+  fbr: 'jobs_fbr'
 } as const
+
+const allSourceKeys = Object.keys(sourceMap) as ScraperKey[]
 
 function isAuthorized(request: NextRequest): boolean {
   const adminSession = request.cookies.get('admin_session')?.value
@@ -157,7 +168,7 @@ export async function GET(request: NextRequest) {
           return { jobs: filtered, countBase: resolveCountBase(filtered) }
         }
 
-        if (scrapeKeys.length === 3) {
+        if (scrapeKeys.length === allSourceKeys.length) {
           if (isNonEmptyJobList(allCached)) return { jobs: allCached, countBase: allCached }
           if (isNonEmptyJobList(stitched)) return { jobs: stitched, countBase: stitched }
           return null
@@ -216,17 +227,19 @@ export async function GET(request: NextRequest) {
       filteredJobs = merged.filter((job) => job.source.toLowerCase() === only)
     }
 
-    if (scrapeKeys.length === 3) {
+    if (scrapeKeys.length === allSourceKeys.length) {
       await jobCache.setAsync?.(cacheKeyMap.all, merged)
-      await jobCache.setAsync?.(cacheKeyMap.fia, merged.filter((job) => job.source === 'FIA'))
-      await jobCache.setAsync?.(cacheKeyMap.fpsc, merged.filter((job) => job.source === 'FPSC'))
-      await jobCache.setAsync?.(cacheKeyMap.njp, merged.filter((job) => job.source === 'NJP'))
+      await Promise.all(
+        allSourceKeys.map((sourceKey) =>
+          jobCache.setAsync?.(cacheKeyMap[sourceKey], merged.filter((job) => job.source.toLowerCase() === sourceKey))
+        )
+      )
     } else {
       const singleKey = scrapeKeys[0]
       await jobCache.setAsync?.(cacheKeyMap[singleKey], merged)
     }
 
-    const countBase = scrapeKeys.length === 3 ? merged : resolveCountBase(filteredJobs)
+    const countBase = scrapeKeys.length === allSourceKeys.length ? merged : resolveCountBase(filteredJobs)
     const stats = await jobCache.getStatsAsync?.() ?? jobCache.getStats()
 
     return buildResponse(filteredJobs, 'live', query, page, limit, stats, countBase)
