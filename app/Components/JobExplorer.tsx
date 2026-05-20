@@ -25,13 +25,18 @@ interface PaginationInfo {
   hasPreviousPage: boolean
 }
 
-export default function JobExplorer() {
+interface Props {
+  initialJobs?: Job[]
+  initialLastUpdated?: string | null
+}
+
+export default function JobExplorer({ initialJobs = [], initialLastUpdated = null }: Props) {
   const [selectedDept, setSelectedDept] = useState<JobSource | 'ALL'>('ALL')
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [jobs, setJobs] = useState<Job[]>([])
+  const [jobs, setJobs] = useState<Job[]>(initialJobs)
   const [loading, setLoading] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(initialLastUpdated)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState<PaginationInfo>({
@@ -113,19 +118,21 @@ export default function JobExplorer() {
   }, [searchTerm])
 
   useEffect(() => {
-    const initialId = window.setTimeout(() => {
-      void fetchJobs({ pageOverride: 1 })
-    }, 0)
+    // Only fetch on mount if we don't have initial server-provided jobs.
+    if (initialJobs.length === 0) {
+      const initialId = window.setTimeout(() => {
+        void fetchJobs({ pageOverride: 1 })
+      }, 0)
+      return () => window.clearTimeout(initialId)
+    }
+    // If we have initial data, refresh less often (every 30 minutes) when visible.
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
         void fetchJobs({ pageOverride: 1 })
       }
-    }, 15 * 60 * 1000)
+    }, 30 * 60 * 1000)
 
-    return () => {
-      window.clearTimeout(initialId)
-      window.clearInterval(interval)
-    }
+    return () => window.clearInterval(interval)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

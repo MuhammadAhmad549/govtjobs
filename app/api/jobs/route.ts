@@ -138,56 +138,50 @@ export async function GET(request: NextRequest) {
     const { page, limit, query } = getPaginationParams(request)
 
     if (!refresh) {
-      const tryServeFromCache = (): { jobs: Job[]; countBase: Job[] } | null => {
-        const allCached = jobCache.get<Job[]>(cacheKeyMap.all)
-        const stitched = stitchPerSourceCaches()
+      const tryServeFromCache = async (): Promise<{ jobs: Job[]; countBase: Job[] } | null> => {
+        const allCached = await jobCache.getAsync?.<Job[]>(cacheKeyMap.all) ?? jobCache.get<Job[]>(cacheKeyMap.all)
+        const fiaCached = await jobCache.getAsync?.<Job[]>(cacheKeyMap.fia) ?? jobCache.get<Job[]>(cacheKeyMap.fia)
+        const fpscCached = await jobCache.getAsync?.<Job[]>(cacheKeyMap.fpsc) ?? jobCache.get<Job[]>(cacheKeyMap.fpsc)
+        const njpCached = await jobCache.getAsync?.<Job[]>(cacheKeyMap.njp) ?? jobCache.get<Job[]>(cacheKeyMap.njp)
+
+        const stitched = [] as Job[]
+        if (fiaCached) stitched.push(...fiaCached)
+        if (fpscCached) stitched.push(...fpscCached)
+        if (njpCached) stitched.push(...njpCached)
 
         if (filterBy) {
           const pool = isNonEmptyJobList(allCached) ? allCached : stitched
-          if (!isNonEmptyJobList(pool)) {
-            return null
-          }
+          if (!isNonEmptyJobList(pool)) return null
           const filtered = pool.filter((job) => job.source === filterBy)
-          if (!isNonEmptyJobList(filtered)) {
-            return null
-          }
+          if (!isNonEmptyJobList(filtered)) return null
           return { jobs: filtered, countBase: resolveCountBase(filtered) }
         }
 
         if (scrapeKeys.length === 3) {
-          if (isNonEmptyJobList(allCached)) {
-            return { jobs: allCached, countBase: allCached }
-          }
-          if (isNonEmptyJobList(stitched)) {
-            return { jobs: stitched, countBase: stitched }
-          }
+          if (isNonEmptyJobList(allCached)) return { jobs: allCached, countBase: allCached }
+          if (isNonEmptyJobList(stitched)) return { jobs: stitched, countBase: stitched }
           return null
         }
 
         const singleKey = scrapeKeys[0]
-        const direct = jobCache.get<Job[]>(cacheKeyMap[singleKey])
-        if (isNonEmptyJobList(direct)) {
-          return { jobs: direct, countBase: resolveCountBase(direct) }
-        }
+        const direct = await jobCache.getAsync?.<Job[]>(cacheKeyMap[singleKey]) ?? jobCache.get<Job[]>(cacheKeyMap[singleKey])
+        if (isNonEmptyJobList(direct)) return { jobs: direct, countBase: resolveCountBase(direct) }
 
         if (isNonEmptyJobList(allCached)) {
           const filtered = allCached.filter((job) => job.source.toLowerCase() === singleKey)
-          if (isNonEmptyJobList(filtered)) {
-            return { jobs: filtered, countBase: allCached }
-          }
+          if (isNonEmptyJobList(filtered)) return { jobs: filtered, countBase: allCached }
         }
 
         const stitchedFiltered = stitched.filter((job) => job.source.toLowerCase() === singleKey)
-        if (isNonEmptyJobList(stitchedFiltered)) {
-          return { jobs: stitchedFiltered, countBase: isNonEmptyJobList(allCached) ? allCached : stitched }
-        }
+        if (isNonEmptyJobList(stitchedFiltered)) return { jobs: stitchedFiltered, countBase: isNonEmptyJobList(allCached) ? allCached : stitched }
 
         return null
       }
 
-      const cached = tryServeFromCache()
+      const cached = await tryServeFromCache()
       if (cached) {
-        return buildResponse(cached.jobs, 'cache', query, page, limit, jobCache.getStats(), cached.countBase)
+        const stats = await jobCache.getStatsAsync?.() ?? jobCache.getStats()
+        return buildResponse(cached.jobs, 'cache', query, page, limit, stats, cached.countBase)
       }
     }
 
@@ -223,18 +217,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (scrapeKeys.length === 3) {
-      jobCache.set(cacheKeyMap.all, merged)
-      jobCache.set(cacheKeyMap.fia, merged.filter((job) => job.source === 'FIA'))
-      jobCache.set(cacheKeyMap.fpsc, merged.filter((job) => job.source === 'FPSC'))
-      jobCache.set(cacheKeyMap.njp, merged.filter((job) => job.source === 'NJP'))
+      await jobCache.setAsync?.(cacheKeyMap.all, merged)
+      await jobCache.setAsync?.(cacheKeyMap.fia, merged.filter((job) => job.source === 'FIA'))
+      await jobCache.setAsync?.(cacheKeyMap.fpsc, merged.filter((job) => job.source === 'FPSC'))
+      await jobCache.setAsync?.(cacheKeyMap.njp, merged.filter((job) => job.source === 'NJP'))
     } else {
       const singleKey = scrapeKeys[0]
-      jobCache.set(cacheKeyMap[singleKey], merged)
+      await jobCache.setAsync?.(cacheKeyMap[singleKey], merged)
     }
 
     const countBase = scrapeKeys.length === 3 ? merged : resolveCountBase(filteredJobs)
+    const stats = await jobCache.getStatsAsync?.() ?? jobCache.getStats()
 
-    return buildResponse(filteredJobs, 'live', query, page, limit, jobCache.getStats(), countBase)
+    return buildResponse(filteredJobs, 'live', query, page, limit, stats, countBase)
   } catch (error) {
     console.error('API Error:', error)
     return NextResponse.json(
@@ -257,7 +252,7 @@ export async function POST(request: NextRequest) {
     const { action } = await request.json()
 
     if (action === 'refresh') {
-      jobCache.clear()
+      await jobCache.clearAsync?.()
       const sources = ['fia', 'fpsc', 'njp'] as const
       const results = await Promise.allSettled(sources.map((sourceKey) => sourceMap[sourceKey]()))
 
@@ -278,10 +273,10 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      jobCache.set(cacheKeyMap.all, allJobs)
-      jobCache.set(cacheKeyMap.fia, sourceJobs.fia)
-      jobCache.set(cacheKeyMap.fpsc, sourceJobs.fpsc)
-      jobCache.set(cacheKeyMap.njp, sourceJobs.njp)
+      await jobCache.setAsync?.(cacheKeyMap.all, allJobs)
+      await jobCache.setAsync?.(cacheKeyMap.fia, sourceJobs.fia)
+      await jobCache.setAsync?.(cacheKeyMap.fpsc, sourceJobs.fpsc)
+      await jobCache.setAsync?.(cacheKeyMap.njp, sourceJobs.njp)
 
       return NextResponse.json({
         success: true,
@@ -292,19 +287,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'cache-status') {
-      return NextResponse.json({
-        success: true,
-        cache: jobCache.getStats()
-      })
+      const stats = await jobCache.getStatsAsync?.() ?? jobCache.getStats()
+      return NextResponse.json({ success: true, cache: stats })
     }
 
     if (action === 'clear-cache') {
-      jobCache.clear()
-      return NextResponse.json({
-        success: true,
-        message: 'Cache cleared successfully',
-        cache: jobCache.getStats()
-      })
+      await jobCache.clearAsync?.()
+      const stats = await jobCache.getStatsAsync?.() ?? jobCache.getStats()
+      return NextResponse.json({ success: true, message: 'Cache cleared successfully', cache: stats })
     }
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })

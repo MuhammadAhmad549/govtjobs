@@ -6,20 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "publish-cache": "node scripts/publish_cache.mjs",
     "lint": "eslint",
-    "scrape": "node scripts/scrape_jobs.js"
+    "scrape": "node scripts/scrape_jobs.mjs"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
     "axios": "^1.16.0",
     "cheerio": "^1.2.0",
+    "dotenv": "^16.1.4",
     "framer-motion": "^12.38.0",
     "next": "16.2.4",
     "node-cache": "^5.1.2",
     "node-cron": "^4.2.1",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
     "pg": "^8.11.0",
-    "dotenv": "^16.1.4"
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

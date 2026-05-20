@@ -1,5 +1,7 @@
+import Link from 'next/link'
 import { Job } from '@/app/lib/types'
 import { departments } from '@/app/lib/departments'
+import { getJobUrl } from '@/app/lib/job-slug'
 
 interface JobCardProps {
   job: Job
@@ -7,13 +9,18 @@ interface JobCardProps {
 
 export default function JobCard({ job }: JobCardProps) {
   const dept = departments[job.source]
+  const detailUrl = getJobUrl(job)
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
       <div className="p-6">
         <div className="flex justify-between items-start gap-4 mb-4">
           <div className="flex-1">
-            <h3 className="text-xl font-semibold text-slate-900 mb-2">{job.title}</h3>
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">
+              <Link href={detailUrl} className="hover:text-cyan-700">
+                {job.title}
+              </Link>
+            </h3>
             <p className="text-sm text-slate-500 mb-1">{job.department}</p>
             <div className="text-sm text-slate-500">{job.location}</div>
           </div>
@@ -55,21 +62,19 @@ export default function JobCard({ job }: JobCardProps) {
         <p className="text-sm text-slate-600 mb-6">{job.description}</p>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Link
+            href={detailUrl}
+            className="inline-flex justify-center items-center rounded-2xl border border-slate-200 text-slate-700 px-4 py-2 text-sm hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+          >
+            View Details
+          </Link>
           <a
             href={job.applyUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex justify-center items-center rounded-2xl bg-slate-900 text-white px-4 py-2 text-sm font-semibold hover:bg-slate-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
           >
-            Apply on Official Site ↗
-          </a>
-          <a
-            href={dept.website}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex justify-center items-center rounded-2xl border border-slate-200 text-slate-700 px-4 py-2 text-sm hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-          >
-            View Department
+            Apply on Official Site
           </a>
         </div>
       </div>

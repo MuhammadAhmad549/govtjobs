@@ -4,8 +4,25 @@ import Footer from './Components/Footer'
 import JobExplorer from './Components/JobExplorer'
 import WelcomeModal from './Components/WelcomeModal'
 import AdUnit from './Components/AdUnit'
+import { jobCache } from './lib/cache'
+import { Job } from './lib/types'
 
-export default function Home() {
+async function getInitialJobs(): Promise<{ jobs: Job[]; timestamp: string | null }> {
+  try {
+    // Prefer async Redis-backed cache when available
+    // jobCache.getAsync falls back to in-memory if Redis isn't configured
+    const cached = typeof jobCache.getAsync === 'function' ? await jobCache.getAsync<Job[]>('jobs_all') : jobCache.get<Job[]>('jobs_all')
+    if (cached && cached.length) {
+      return { jobs: cached, timestamp: new Date().toISOString() }
+    }
+  } catch (e) {
+    // ignore cache errors and fall through to empty
+  }
+  return { jobs: [], timestamp: null }
+}
+
+export default async function Home() {
+  const initial = await getInitialJobs()
   return (
     <div className="min-h-screen bg-slate-50">
       <WelcomeModal />
@@ -44,7 +61,7 @@ export default function Home() {
       ) : null}
 
       <div id="jobs">
-        <JobExplorer />
+        <JobExplorer initialJobs={initial.jobs} initialLastUpdated={initial.timestamp} />
       </div>
 
       <Footer />
