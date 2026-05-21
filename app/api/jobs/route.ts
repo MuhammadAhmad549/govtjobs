@@ -266,13 +266,16 @@ export async function POST(request: NextRequest) {
 
     if (action === 'refresh') {
       await jobCache.clearAsync?.()
-      const sources = ['fia', 'fpsc', 'njp'] as const
+      const sources = allSourceKeys
       const results = await Promise.allSettled(sources.map((sourceKey) => sourceMap[sourceKey]()))
 
       const sourceJobs: Record<ScraperKey, Job[]> = {
         fia: [],
         fpsc: [],
-        njp: []
+        njp: [],
+        ppsc: [],
+        punjab: [],
+        fbr: []
       }
       const allJobs: Job[] = []
 
@@ -287,9 +290,7 @@ export async function POST(request: NextRequest) {
       })
 
       await jobCache.setAsync?.(cacheKeyMap.all, allJobs)
-      await jobCache.setAsync?.(cacheKeyMap.fia, sourceJobs.fia)
-      await jobCache.setAsync?.(cacheKeyMap.fpsc, sourceJobs.fpsc)
-      await jobCache.setAsync?.(cacheKeyMap.njp, sourceJobs.njp)
+      await Promise.all(sources.map((s) => jobCache.setAsync?.(cacheKeyMap[s], sourceJobs[s])))
 
       return NextResponse.json({
         success: true,
