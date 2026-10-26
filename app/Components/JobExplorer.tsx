@@ -1,20 +1,11 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Job, JobSource } from '@/app/lib/types'
 import { departments } from '@/app/lib/departments'
+import { buildSourceCounts, type SourceCounts } from '@/app/lib/jobs-source'
 import JobFilters from './JobFilters'
 import JobCard from './JobCard'
-
-interface SourceCounts {
-  ALL: number
-  FPSC: number
-  PUNJAB: number
-  PPSC: number
-  FBR: number
-  FIA: number
-  NJP: number
-}
 
 interface PaginationInfo {
   page: number
@@ -28,34 +19,39 @@ interface PaginationInfo {
 interface Props {
   initialJobs?: Job[]
   initialLastUpdated?: string | null
+  pageTitle?: string
+  pageSubtitle?: string
 }
 
-export default function JobExplorer({ initialJobs = [], initialLastUpdated = null }: Props) {
+export default function JobExplorer({
+  initialJobs = [],
+  initialLastUpdated = null,
+  pageTitle,
+  pageSubtitle,
+}: Props) {
   const [selectedDept, setSelectedDept] = useState<JobSource | 'ALL'>('ALL')
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [jobs, setJobs] = useState<Job[]>(initialJobs)
+  const [jobs, setJobs] = useState<Job[]>(() => initialJobs.slice(0, 12))
   const [loading, setLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<string | null>(initialLastUpdated)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [pagination, setPagination] = useState<PaginationInfo>({
-    page: 1,
-    limit: 12,
-    total: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPreviousPage: false
+  const hasMountedFilters = useRef(false)
+  const [pagination, setPagination] = useState<PaginationInfo>(() => {
+    const total = initialJobs.length
+    const limit = 12
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    return {
+      page: 1,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: total > limit,
+      hasPreviousPage: false
+    }
   })
-  const [counts, setCounts] = useState<SourceCounts>({
-    ALL: 0,
-    FPSC: 0,
-    PUNJAB: 0,
-    PPSC: 0,
-    FBR: 0,
-    FIA: 0,
-    NJP: 0
-  })
+  const [counts, setCounts] = useState<SourceCounts>(() => buildSourceCounts(initialJobs))
 
   const fetchJobs = async (opts?: { pageOverride?: number; forceRefresh?: boolean; queryOverride?: string }) => {
     const targetPage = opts?.pageOverride ?? page
@@ -118,6 +114,18 @@ export default function JobExplorer({ initialJobs = [], initialLastUpdated = nul
   }, [searchTerm])
 
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const source = params.get('source')?.toUpperCase()
+      if (source && source in departments) {
+        setSelectedDept(source as JobSource)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
     // Only fetch on mount if we don't have initial server-provided jobs.
     if (initialJobs.length === 0) {
       const initialId = window.setTimeout(() => {
@@ -137,6 +145,11 @@ export default function JobExplorer({ initialJobs = [], initialLastUpdated = nul
   }, [])
 
   useEffect(() => {
+    if (!hasMountedFilters.current) {
+      hasMountedFilters.current = true
+      return
+    }
+
     const id = window.setTimeout(() => {
       setPage(1)
       void fetchJobs({ pageOverride: 1, queryOverride: debouncedSearch })
@@ -182,6 +195,8 @@ export default function JobExplorer({ initialJobs = [], initialLastUpdated = nul
           onRefresh={handleRefresh}
           lastUpdated={lastUpdated}
           counts={counts}
+          pageTitle={pageTitle}
+          pageSubtitle={pageSubtitle}
         />
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">

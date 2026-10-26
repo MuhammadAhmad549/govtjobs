@@ -1,5 +1,6 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
+import { errorLogger } from '../error-logger'
 
 interface ParsedJob {
   id: number
@@ -19,6 +20,7 @@ interface ParsedJob {
 }
 
 export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
+  const startTime = Date.now()
   try {
     const url = 'https://fia.gov.pk/careers'
     const { data } = await axios.get(url, {
@@ -33,11 +35,30 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
     const seenTitles = new Set<string>()
     let jobId = 9001
 
-    const jobElements = $('.careers-list a, .career-item a, a[href*="career"], a[href*="vacancy"], a[href*="jobs"]')
+    // Try multiple selectors with increasing fallback specificity
+    const selectors = [
+      '.careers-list a',
+      '.career-item a',
+      'a[href*="career"]',
+      'a[href*="vacancy"]',
+      'a[href*="jobs"]',
+      'table a', // Fallback for table-based layouts
+      'div[class*="job"] a', // Generic job container
+      'main a' // Catch-all within main content
+    ]
+
+    let jobElements = $()
+    for (const selector of selectors) {
+      jobElements = $(selector)
+      if (jobElements.length > 0) {
+        errorLogger.info('FIA scraper: Found jobs with selector', { selector, count: jobElements.length })
+        break
+      }
+    }
 
     if (jobElements.length === 0) {
-      console.log('FIA: No job elements found with current selectors')
-      return jobs
+      errorLogger.warn('FIA scraper: No job elements found with any selectors', { url })
+      return getFIAFallbackJob()
     }
 
     jobElements.each((index, element) => {
@@ -57,13 +78,13 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
         }
 
         const description = $el
-          .closest('article, li, div')
+          .closest('article, li, div[class*="card"], div[class*="item"]')
           .text()
           .replace(/\s+/g, ' ')
           .trim()
           .substring(0, 260)
 
-        const deadline = [$el.find('.deadline, .closing-date, .last-date').text().trim(),
+        const deadline = [$el.find('.deadline, .closing-date, .last-date, [class*="date"]').text().trim(),
           $el.find('*:contains("deadline"), *:contains("last date"), *:contains("closing date")').first().text().trim()
         ].find(Boolean) || 'Check website'
 
@@ -90,35 +111,42 @@ export async function scrapeFIAJobs(): Promise<ParsedJob[]> {
           isAuthentic: true
         })
       } catch (error) {
-        console.log(`Error parsing FIA job element ${index}:`, error)
+        errorLogger.warn(`Error parsing FIA job element ${index}`, { error })
       }
     })
 
     if (!jobs.length) {
-      jobs.push({
-        id: jobId++,
-        title: 'FIA Careers Portal',
-        department: 'Federal Investigation Agency',
-        location: 'Pakistan',
-        salary: 'As per post',
-        deadline: 'Check website',
-        type: 'Permanent',
-        experience: 'As per requirements',
-        description: 'Official FIA careers portal for current vacancies and recruitment notices.',
-        source: 'FIA',
-        sourceWebsite: 'Federal Investigation Agency',
-        applyUrl: 'https://fia.gov.pk/careers',
-        sourceColor: 'purple',
-        isAuthentic: true
-      })
+      errorLogger.warn('FIA scraper: Parsed 0 jobs despite finding elements', { elementCount: jobElements.length })
+      return getFIAFallbackJob()
     }
 
-    console.log(`FIA Scraper: Found ${jobs.length} jobs`)
+    errorLogger.info(`FIA Scraper: Found ${jobs.length} jobs`, { duration: Date.now() - startTime })
     return jobs.slice(0, 15)
   } catch (error) {
-    console.error('FIA Scraper Error:', error instanceof Error ? error.message : error)
-    return []
+    errorLogger.error('FIA Scraper Error', error, { duration: Date.now() - startTime })
+    return getFIAFallbackJob()
   }
+}
+
+function getFIAFallbackJob(): ParsedJob[] {
+  return [
+    {
+      id: 9001,
+      title: 'FIA Careers Portal',
+      department: 'Federal Investigation Agency',
+      location: 'Pakistan',
+      salary: 'As per post',
+      deadline: 'Check website',
+      type: 'Permanent',
+      experience: 'As per requirements',
+      description: 'Visit the official FIA careers portal for current vacancies and recruitment notices.',
+      source: 'FIA',
+      sourceWebsite: 'Federal Investigation Agency',
+      applyUrl: 'https://fia.gov.pk/careers',
+      sourceColor: 'purple',
+      isAuthentic: true
+    }
+  ]
 }
 
 function isLikelyFIAJobTitle(title: string): boolean {

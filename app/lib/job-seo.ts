@@ -6,6 +6,7 @@ import { scrapePunjabJobs } from '@/app/lib/scrapers/punjab-scraper'
 import { scrapeFBRJobs } from '@/app/lib/scrapers/fbr-scraper'
 import { jobCache } from '@/app/lib/cache'
 import { slugifyJob } from '@/app/lib/job-slug'
+import { isJobExpired } from '@/app/lib/deadline'
 import type { Job } from '@/app/lib/types'
 
 const JOB_CACHE_KEY = 'jobs_all'
@@ -14,7 +15,7 @@ export { getJobUrl, slugifyJob } from '@/app/lib/job-slug'
 
 export async function getAllJobsForSeo(): Promise<Job[]> {
   const cached = await jobCache.getAsync?.<Job[]>(JOB_CACHE_KEY) ?? jobCache.get<Job[]>(JOB_CACHE_KEY)
-  if (cached?.length) return cached
+  if (cached?.length) return cached.filter((job) => !isJobExpired(job))
 
   const results = await Promise.allSettled([
     scrapeFIAJobs(),
@@ -32,11 +33,12 @@ export async function getAllJobsForSeo(): Promise<Job[]> {
     }
   })
 
-  if (jobs.length) {
-    await jobCache.setAsync?.(JOB_CACHE_KEY, jobs)
+  const currentJobs = jobs.filter((job) => !isJobExpired(job))
+  if (currentJobs.length) {
+    await jobCache.setAsync?.(JOB_CACHE_KEY, currentJobs)
   }
 
-  return jobs
+  return currentJobs
 }
 
 export async function getJobBySlug(slug: string): Promise<Job | null> {

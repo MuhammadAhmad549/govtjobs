@@ -7,9 +7,16 @@ interface JobCardProps {
   job: Job
 }
 
+function trimDescription(text: string, maxLength = 160) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, maxLength).trimEnd()}…`
+}
+
 export default function JobCard({ job }: JobCardProps) {
   const dept = departments[job.source]
   const detailUrl = getJobUrl(job)
+  const summary = trimDescription(job.description)
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
@@ -28,15 +35,9 @@ export default function JobCard({ job }: JobCardProps) {
             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${dept.bgColor} ${dept.color}`}>
               {dept.name}
             </span>
-            {job.isAuthentic ? (
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                Verified
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                Official Listing
-              </span>
-            )}
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+              Official source
+            </span>
           </div>
         </div>
 
@@ -59,7 +60,7 @@ export default function JobCard({ job }: JobCardProps) {
           </div>
         </div>
 
-        <p className="text-sm text-slate-600 mb-6">{job.description}</p>
+        <p className="text-sm text-slate-600 mb-6 line-clamp-3">{summary}</p>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Link

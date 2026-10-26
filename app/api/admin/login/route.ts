@@ -1,38 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { generateAdminToken } from '@/app/lib/auth'
+import { errorLogger } from '@/app/lib/error-logger'
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json()
+    const { email, password } = await request.json()
 
-    const adminUser = process.env.ADMIN_USERNAME
-    const adminPass = process.env.ADMIN_PASSWORD
-    const sessionToken = process.env.ADMIN_SESSION_TOKEN
-
-    if (!adminUser || !adminPass || !sessionToken) {
-      return NextResponse.json(
-        { success: false, error: 'Admin environment variables are not configured' },
-        { status: 500 }
-      )
+    if (!email || !password) {
+      return NextResponse.json({ success: false, error: 'Email and password required' }, { status: 400 })
     }
 
-    if (username !== adminUser || password !== adminPass) {
-      return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401 })
+    // Get credentials from environment
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@govtjobs.local'
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Demo@123'
+
+    if (email !== adminEmail || password !== adminPassword) {
+      errorLogger.warn('Failed admin login attempt', { email, ip: request.headers.get('x-forwarded-for') })
+      return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401 })
     }
 
-    const response = NextResponse.json({ success: true })
-    response.cookies.set('admin_session', sessionToken, {
+    // Generate JWT token
+    const token = generateAdminToken(email)
+
+    errorLogger.info('Admin logged in successfully', { email })
+
+    const response = NextResponse.json({
+      success: true,
+      token,
+      message: 'Login successful'
+    })
+
+    // Set HTTP-only cookie
+    response.cookies.set('admin_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60 * 8
+      maxAge: 24 * 60 * 60 // 24 hours
     })
 
     return response
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Login failed' },
-      { status: 500 }
-    )
+    errorLogger.error('Admin login error', error)
+    return NextResponse.json({ success: false, error: 'Login failed' }, { status: 500 })
   }
 }

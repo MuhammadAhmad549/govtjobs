@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/app/Components/Footer'
 import Navbar from '@/app/Components/Navbar'
+import AdPlacement from '@/app/Components/AdPlacement'
 import { departments } from '@/app/lib/departments'
 import { buildJobPostingJsonLd, getJobBySlug, getJobUrl } from '@/app/lib/job-seo'
 
@@ -100,6 +101,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
           </div>
 
           <div className="border-t border-slate-200 p-6 sm:p-8">
+            <AdPlacement slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_JOB} className="my-0 mb-8" />
             <h2 className="text-xl font-semibold text-slate-950">Job Details</h2>
             <p className="mt-3 leading-7 text-slate-700">{job.description}</p>
 

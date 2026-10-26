@@ -9,8 +9,8 @@ const Footer = () => {
           <div className="space-y-4">
             <h3 className="text-xl font-bold text-blue-400">Government Jobs Pakistan</h3>
             <p className="text-gray-300 text-sm">
-              Your trusted platform for finding government job opportunities across Pakistan.
-              Connecting talented individuals with meaningful careers in public service.
+              An independent directory of public-sector vacancy information and links to recruitment sources across Pakistan.
+              Always verify details with the recruiting organization.
             </p>
           </div>
 
@@ -39,10 +39,16 @@ const Footer = () => {
           </div>
 
           <div className="space-y-4">
-            <h4 className="text-lg font-semibold">Contact Us</h4>
+            <h4 className="text-lg font-semibold">Contact</h4>
             <p className="text-sm text-gray-300">Islamabad, Pakistan</p>
-            <p className="text-sm text-gray-300">+92 51 123 4567</p>
-            <p className="text-sm text-gray-300">info@govjobs.pk</p>
+            <p className="text-sm text-gray-300">
+              <a href="mailto:support@govtjobs.pk" className="hover:text-blue-400 transition-colors">
+                support@govtjobs.pk
+              </a>
+            </p>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Listings are aggregated from public government portals. We are not a hiring authority.
+            </p>
           </div>
         </div>
 

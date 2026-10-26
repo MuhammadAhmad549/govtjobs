@@ -31,3 +31,25 @@ export function parseJobsSourceParam(raw: string | null): JobsSourceRequest {
 export function isNonEmptyJobList(value: Job[] | null | undefined): value is Job[] {
   return Array.isArray(value) && value.length > 0
 }
+
+export interface SourceCounts {
+  ALL: number
+  FPSC: number
+  PUNJAB: number
+  PPSC: number
+  FBR: number
+  FIA: number
+  NJP: number
+}
+
+export function buildSourceCounts(jobs: Job[]): SourceCounts {
+  return {
+    ALL: jobs.length,
+    FPSC: jobs.filter((job) => job.source === 'FPSC').length,
+    PUNJAB: jobs.filter((job) => job.source === 'PUNJAB').length,
+    PPSC: jobs.filter((job) => job.source === 'PPSC').length,
+    FBR: jobs.filter((job) => job.source === 'FBR').length,
+    FIA: jobs.filter((job) => job.source === 'FIA').length,
+    NJP: jobs.filter((job) => job.source === 'NJP').length
+  }
+}

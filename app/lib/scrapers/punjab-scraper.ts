@@ -20,7 +20,7 @@ export async function scrapePunjabJobs(): Promise<Job[]> {
     const links = $('a').filter((_, el) => {
       const href = $(el).attr('href') || ''
       const text = normalizeText($(el).text())
-      return href.includes('jobs') || text.match(/job|vacancy|opening|career/i)
+      return href.includes('jobs') || Boolean(text.match(/job|vacancy|opening|career/i))
     })
 
     links.each((index, element) => {

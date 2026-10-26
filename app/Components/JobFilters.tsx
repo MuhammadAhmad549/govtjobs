@@ -13,6 +13,9 @@ interface JobFiltersProps {
   onRefresh: () => Promise<void>
   lastUpdated: string | null
   counts: Record<JobSource | 'ALL', number>
+  /** When set, replaces the default section heading (e.g. on /jobs). */
+  pageTitle?: string
+  pageSubtitle?: string
 }
 
 export default function JobFilters({
@@ -24,14 +27,16 @@ export default function JobFilters({
   loading,
   onRefresh,
   lastUpdated,
-  counts
+  counts,
+  pageTitle = 'Browse jobs by department',
+  pageSubtitle = 'Search official listings from FPSC, PPSC, NJP, FIA, FBR, and Punjab Jobs.',
 }: JobFiltersProps) {
   return (
     <div className="mb-10">
       <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center mb-6">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900">Browse Jobs by Department</h2>
-          <p className="text-sm text-slate-500 mt-2">Search official government listings and refresh data from the scraper gateway.</p>
+          <h2 className="text-3xl font-bold text-slate-900">{pageTitle}</h2>
+          <p className="text-sm text-slate-500 mt-2">{pageSubtitle}</p>
         </div>
 
         <button
@@ -46,7 +51,7 @@ export default function JobFilters({
       </div>
 
       {lastUpdated ? (
-        <p className="text-sm text-slate-500 mb-6">Last updated: {lastUpdated} • Auto-refresh every 15 minutes while this tab is visible</p>
+        <p className="text-sm text-slate-500 mb-6">Last updated: {lastUpdated} • Background refresh about every 30 minutes while this tab is open</p>
       ) : null}
 
       <form

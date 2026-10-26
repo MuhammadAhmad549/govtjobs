@@ -3,8 +3,8 @@ name: Scrape Jobs
 
 on:
   schedule:
-    # once daily
-    - cron: '0 0 * * *'
+    # Keep Redis populated before the six-hour cache expires.
+    - cron: '0 */4 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -20,5 +20,6 @@ jobs:
         run: npm install
       - name: Run scraper
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npm run scrape
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: npm run publish-cache

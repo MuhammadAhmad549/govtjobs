@@ -8,6 +8,10 @@ import { scrapeFBRJobs } from '@/app/lib/scrapers/fbr-scraper'
 import { jobCache } from '@/app/lib/cache'
 import { isNonEmptyJobList, parseJobsSourceParam, type ScraperKey } from '@/app/lib/jobs-source'
 import { Job } from '@/app/lib/types'
+import { isAdminAuthorized } from '@/app/lib/auth'
+import { createRateLimitMiddleware } from '@/app/lib/rate-limiter'
+import { errorLogger } from '@/app/lib/error-logger'
+import { isJobExpired } from '@/app/lib/deadline'
 
 export const maxDuration = 45
 
@@ -33,21 +37,18 @@ const cacheKeyMap = {
 const allSourceKeys = Object.keys(sourceMap) as ScraperKey[]
 
 function isAuthorized(request: NextRequest): boolean {
-  const adminSession = request.cookies.get('admin_session')?.value
-  const expectedToken = process.env.ADMIN_SESSION_TOKEN
-
-  if (!expectedToken || !adminSession) {
-    return false
-  }
-
-  return adminSession === expectedToken
+  return isAdminAuthorized(request)
 }
 
 function getPaginationParams(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const page = Math.max(1, Number(searchParams.get('page') || 1))
   const limit = Math.min(50, Math.max(1, Number(searchParams.get('limit') || 12)))
-  const query = (searchParams.get('q') || '').trim().toLowerCase()
+  let query = (searchParams.get('q') || '').trim().toLowerCase()
+  
+  // Sanitize query: remove special regex chars, limit length
+  query = query.replace(/[.*+?^${}()|[\]\\]/g, '').substring(0, 100)
+  
   return { page, limit, query }
 }
 
@@ -124,11 +125,13 @@ function buildResponse(
   cacheStatus?: unknown,
   countSourceJobs?: Job[]
 ) {
-  const searchedJobs = applySearch(jobs, query)
+  const currentJobs = jobs.filter((job) => !isJobExpired(job))
+  const currentCountJobs = (countSourceJobs ?? jobs).filter((job) => !isJobExpired(job))
+  const searchedJobs = applySearch(currentJobs, query)
   const { paginated, pagination } = paginateJobs(searchedJobs, page, limit)
-  const summaryBase = applySearch(countSourceJobs ?? jobs, query)
+  const summaryBase = applySearch(currentCountJobs, query)
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     data: paginated,
     source,
@@ -139,9 +142,17 @@ function buildResponse(
       sourceCounts: buildSourceCounts(summaryBase)
     }
   })
+
+  response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=1800')
+  return response
 }
 
 export async function GET(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitCheck = createRateLimitMiddleware({ windowMs: 15 * 60 * 1000, maxRequests: 100 })
+  const rateLimitResponse = rateLimitCheck(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const searchParams = request.nextUrl.searchParams
     const { scrapeKeys, filterBy } = parseJobsSourceParam(searchParams.get('source'))
@@ -204,11 +215,12 @@ export async function GET(request: NextRequest) {
       if (result.status === 'fulfilled' && Array.isArray(result.value)) {
         merged.push(...result.value)
       } else {
-        console.error(`Scraping error for ${sourceKey.toUpperCase()}:`, result.status === 'rejected' ? result.reason : 'Unexpected scraper result')
+        errorLogger.error(`Scraping error for ${sourceKey.toUpperCase()}`, result.status === 'rejected' ? result.reason : 'Unexpected scraper result', { sourceKey })
       }
     })
 
     if (!merged.length) {
+      errorLogger.warn('No jobs found from any scraper', { scrapeKeys, filterBy })
       return NextResponse.json(
         {
           success: false,
@@ -244,11 +256,11 @@ export async function GET(request: NextRequest) {
 
     return buildResponse(filteredJobs, 'live', query, page, limit, stats, countBase)
   } catch (error) {
-    console.error('API Error:', error)
+    errorLogger.error('API GET Error', error, { path: request.nextUrl.pathname })
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Internal server error',
         data: []
       },
       { status: 500 }
@@ -257,8 +269,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Apply rate limiting to admin endpoints
+  const rateLimitCheck = createRateLimitMiddleware({ windowMs: 15 * 60 * 1000, maxRequests: 50 })
+  const rateLimitResponse = rateLimitCheck(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     if (!isAuthorized(request)) {
+      errorLogger.warn('Unauthorized admin access attempt', { ip: request.headers.get('x-forwarded-for') })
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -285,12 +303,14 @@ export async function POST(request: NextRequest) {
           sourceJobs[sourceKey] = result.value
           allJobs.push(...result.value)
         } else {
-          console.error(`Error refreshing ${sourceKey.toUpperCase()}:`, result.status === 'rejected' ? result.reason : 'Unexpected scraper result')
+          errorLogger.error(`Error refreshing ${sourceKey.toUpperCase()}`, result.status === 'rejected' ? result.reason : 'Unexpected scraper result', { sourceKey })
         }
       })
 
       await jobCache.setAsync?.(cacheKeyMap.all, allJobs)
       await Promise.all(sources.map((s) => jobCache.setAsync?.(cacheKeyMap[s], sourceJobs[s])))
+
+      errorLogger.info('Cache refreshed successfully', { totalJobs: allJobs.length, sources: Object.keys(sourceJobs).filter((k) => sourceJobs[k as ScraperKey].length > 0) })
 
       return NextResponse.json({
         success: true,
@@ -308,16 +328,17 @@ export async function POST(request: NextRequest) {
     if (action === 'clear-cache') {
       await jobCache.clearAsync?.()
       const stats = await jobCache.getStatsAsync?.() ?? jobCache.getStats()
+      errorLogger.info('Cache cleared by admin')
       return NextResponse.json({ success: true, message: 'Cache cleared successfully', cache: stats })
     }
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
   } catch (error) {
-    console.error('API Error:', error)
+    errorLogger.error('API POST Error', error)
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: 'Internal server error'
       },
       { status: 500 }
     )

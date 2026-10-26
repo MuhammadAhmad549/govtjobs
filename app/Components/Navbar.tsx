@@ -8,12 +8,10 @@ import Link from 'next/link'
 import Image from 'next/image'
 
 const NAV_ITEMS = [
-  { name: 'Home', icon: '', href: '/' },
-  { name: 'Jobs', icon: '', href: '/jobs' },
-  { name: 'About-Us', icon: '', href: '/about' },
-  { name: 'Privacy Policy', icon: '', href: '/privacy' },
-  { name: 'Terms', icon: '', href: '/terms' },
-  { name: 'Contact-Us', icon: '', href: '/contact' }
+  { name: 'Home', href: '/' },
+  { name: 'Jobs', href: '/jobs' },
+  { name: 'About', href: '/about' },
+  { name: 'Contact', href: '/contact' },
 ]
 
 export default function Navbar() {
@@ -99,10 +97,7 @@ export default function Navbar() {
                   href={item.href}
                   className="relative group text-gray-700 hover:text-blue-600 transition-all duration-300"
                 >
-                  <span className="flex items-center gap-1">
-                    <span>{item.icon}</span>
-                    {item.name}
-                  </span>
+                  <span>{item.name}</span>
                   <span className="absolute left-0 -bottom-1 h-0.5 w-0 bg-blue-500
                     transition-all duration-300 group-hover:w-full rounded-full" />
                 </Link>
@@ -151,7 +146,6 @@ export default function Navbar() {
                     className="flex items-center gap-2 rounded-xl px-4 py-3 text-base font-medium
                       hover:bg-blue-50 hover:text-blue-600 transition-all duration-300"
                   >
-                    <span className="text-lg">{item.icon}</span>
                     <span>{item.name}</span>
                   </Link>
                 </li>
